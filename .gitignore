@@ -1,0 +1,12 @@
+code/*cache
+output/dada
+output/trim
+output/rds/dada.rds
+data/MiSeq_raw
+data/taxDB
+.Rproj.user/
+EricoidChronosequence.Rproj
+.Rhistory
+Rplots.pdf
+README.html
+MS
