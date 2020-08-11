@@ -1,9 +1,9 @@
 code/*cache
+code/BUP
 output/dada
 output/trim
 output/rds/dada.rds
 data/MiSeq_raw
-data/taxDB
 .Rproj.user/
 EricoidChronosequence.Rproj
 .Rhistory

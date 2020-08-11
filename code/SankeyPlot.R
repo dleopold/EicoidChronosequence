@@ -71,9 +71,9 @@ OTUorder <- foreach(site=levels(dat_long$Site), .combine=c) %do% {
 
 #' Set parameters and counters for defining ranges for each taxon
 siteHeight <- dat_long %>% filter(Site=="Kokee") %$% value %>% sum %>% multiply_by(9)
-sep1 <- 10 # Site seperation
-sep2 <- 14 # Max OTU seperation
-sep3 <- 2 # Min OTU seperation
+sep1 <- 50 # Site separation
+sep2 <- 14 # Max OTU separation
+sep3 <- 5 # Min OTU separation
 #' function to scale variation in OTU width for label spacing
 OTUrange <- dat_wide[,-1] %>% colSums() %>% range
 spacingScaler <- function(x){
@@ -119,6 +119,13 @@ siteShapes <- parallel.dat %>% filter(x==1.5) %>%
 otuShapes <- parallel.dat %>% filter(x==2) %>%
   group_by(Taxon) %>%
   summarize(ymin=min(y),ymax=max(y),indicator=indicator[1])
+#' Add site labels
+siteShapes$age <- c("3.0&times;10^2 yr",
+                    "2.1&times;10^3 yr",
+                    "2.0&times;10^4 yr",
+                    "1.5&times;10^5 yr",
+                    "4.1&times;10^6 yr")
+siteShapes %<>% mutate(lab=paste0(Site,"<br>",age)) 
 
 #' Format IDs and taxonomy strings fro potting (this code needs to be streamlined)
 otuLabs <- tax_table(phy) %>% data.frame %>%
@@ -136,6 +143,10 @@ otuLabs <- parallel.dat %>% filter(x==2) %>%
   group_by(Taxon) %>% summarize(y=mean(c(min(y),max(y)))) %>%
   full_join(otuLabs)
 otuLabs$label %<>% paste("|",.)
+otuLabs$label %<>% gsub("Trechisporales","Trechisporales*",.)
+
+#erm <- readRDS("output/rds/phy.erm.rds") %>% taxa_names()
+#otuLabs$Taxon[otuLabs$Taxon %in% erm] %<>% paste0("**",.,"**")
 
 #' Make plot
 sankey <- ggplot(parallel.dat) +
@@ -150,29 +161,23 @@ sankey <- ggplot(parallel.dat) +
   geom_rect(data=drop_na(otuShapes), color="grey40",size=0.25,
             aes(xmin=2,xmax=2.05,ymin=ymin,ymax=ymax,fill=indicator))+
   scale_fill_manual("Site age (yr)",
-                    values=SiteColors,
-                    labels=rev(c("3.0&times;10^2",
-                             "2.1&times;10^3",
-                             "2.0&times;10^4",
-                             "1.5&times;10^5",
-                             "4.1&times;10^6")),
-                    guide = guide_legend(reverse = TRUE))+
+                    values=SiteColors)+
   geom_richtext(data=otuLabs,aes(x=2.07,label=Taxon,y=y), size=4,
                 hjust=0, vjust=0.75, fill = NA, label.color = NA, 
                 label.padding = grid::unit(rep(0, 4), "pt"))+
-  geom_richtext(data=siteShapes, aes(x=1.37,y=center,label=Site),
-                angle=90,fill = NA, label.color = NA, size=4.8)+
-  geom_richtext(data=data.frame(),aes(x=2.308,y=600, label="OTU.id | predicted taxonomy"),
+  geom_richtext(data=siteShapes, aes(x=1.39,y=center,label=lab),
+                hjust=1,fill = NA, label.color = NA, size=4.8)+
+  geom_richtext(data=data.frame(),aes(x=2.315,y=610, label="OTU.id | predicted taxonomy"),
                 fill = NA, label.color = NA, size=5) +
   geom_richtext(data=otuLabs,aes(x=2.19,label=label,y=y), size=4,
                 hjust=0, vjust=0.75, fill = NA, label.color = NA, label.padding = grid::unit(rep(0, 4), "pt"))+
-  lims(x=c(1.35,2.58)) +
+  lims(x=c(1.15,2.58)) +
   cowplot::theme_map() +
-  theme(legend.position = c(.09,.898),
+  theme(legend.position = 'none',
         legend.title = element_markdown(size=16),
         legend.text = element_markdown(size=14),
         legend.key.size = unit(1.2,"line"),
         plot.margin = margin(0,0,0,0)) 
-ggsave("output/figs/Fig.2.pdf",sankey,width=16,height=28,units = "cm")
+ggsave("output/figs/Sankey.pdf",sankey,width=18,height=28,units = "cm")
 
 

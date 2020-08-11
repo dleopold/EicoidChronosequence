@@ -118,7 +118,7 @@ seqs <- getSequences(seqtab) %>% DNAStringSet()
 names(seqs) <- getSequences(seqtab)
 
 #' Assign taxonomy with UNITE fungal database v8.2
-taxa <- assignTaxonomy(seqs,"data/taxDB/sh_general_release_dynamic_s_04.02.2020.fasta", multithread = T)
+taxa <- assignTaxonomy(seqs,"data/taxDB/UNITEv8.2S.ITS1_curated.fasta.gz", multithread = T)
 
 #' combine
 (phy <- phyloseq(otu_table(seqtab,taxa_are_rows = F),
@@ -141,8 +141,8 @@ cluster <- function(phy.in,method="single",dissimilarity=0.01){
 phy %<>% cluster  
 
 #' # Taxonomy filter
-#' Use UNITE "all Eukaryotes" database to filter non-fungal amplicons
-taxa.filter <- assignTaxonomy(refseq(phy),"data/taxDB/sh_general_release_dynamic_all_04.02.2020.fasta", multithread = T)
+#' Use UNITE "all Eukaryotes" database to filter non-fungal amplicons (database was trimmed to ITS1)
+taxa.filter <- assignTaxonomy(refseq(phy),"data/taxDB/UNITE_allEuk_trimmed.fasta.gz", multithread = T)
 (phy %<>% prune_taxa(grepl("k__Fungi",taxa.filter[,1]),.))
 
 #' # Negative controls
@@ -157,7 +157,10 @@ phy %<>% prune_taxa(maxNegAbund < meanAbund,.) %>%
   subset_samples(is.na(Control)) #Also remove control samps. from phy object
 
 #' set ascending OTU names
-tmp.names <- order(taxa_sums(phy),decreasing = T)
+tmp.names <- phy %>%
+  transform_sample_counts(function(x){x/sum(x)}) %>%
+  taxa_sums() %>%
+  order(decreasing = T)
 names(tmp.names) <- paste0("OTU.",1:ntaxa(phy)) 
 taxa_names(phy) <- names(sort(tmp.names))
 

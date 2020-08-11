@@ -14,21 +14,22 @@ output/html/MiSeqProcessing.html output/rds/phy.rds output/rds/phy.erm.rds: code
 	Rscript -e 'rmarkdown::render("$<", output_dir = "output/html", knit_root_dir = "$(CURDIR)")'
 
 ### Analyses ###
-analysis: output/figs/Fig.2.pdf \
-	output/html/ChronosequenceComposition.html output/figs/Fig.3.pdf \
-	output/html/ChronosequenceDiversity.html output/figs/Fig.4.pdf \
-	output/html/FertilizationPlots.html output/figs/Fig.5.pdf \
+analysis: output/rds/phy.rds output/rds/phy.erm.rds \
+	output/figs/Sankey.pdf \
+	output/html/ChronosequenceComposition.html output/figs/ordinations.pdf \
+	output/html/ChronosequenceDiversity.html output/figs/divPlot.pdf \
+	output/html/FertilizationPlots.html output/figs/fertDivPlot.pdf \
 
-output/figs/Fig.2.pdf: code/SankeyPlot.R output/rds/phy.rds | housekeeping
+output/figs/Sankey.pdf: code/SankeyPlot.R output/rds/phy.rds | housekeeping
 	Rscript $<
 	
-output/html/ChronosequenceComposition.html output/figs/Fig.3.pdf: code/ChronosequenceComposition.R output/rds/phy.rds output/rds/phy.erm.rds | housekeeping
+output/html/ChronosequenceComposition.html output/figs/ordinations.pdf: code/ChronosequenceComposition.R output/rds/phy.rds output/rds/phy.erm.rds | housekeeping
 	Rscript -e 'rmarkdown::render("$<", output_dir = "output/html", knit_root_dir = "$(CURDIR)")'
 
-output/html/ChronosequenceDiversity.html output/figs/Fig.4.pdf: code/ChronosequenceDiversity.R output/rds/phy.rds output/rds/phy.erm.rds | housekeeping
+output/html/ChronosequenceDiversity.html output/figs/divPlot.pdf: code/ChronosequenceDiversity.R output/rds/phy.rds output/rds/phy.erm.rds | housekeeping
 	Rscript -e 'rmarkdown::render("$<", output_dir = "output/html", knit_root_dir = "$(CURDIR)")'
 
-output/html/FertilizationPlots.html output/figs/Fig.5.pdf: code/FertilizationPlots.R output/rds/phy.rds output/rds/phy.erm.rds | housekeeping
+output/html/FertilizationPlots.html output/figs/fertDivPlot.pdf: code/FertilizationPlots.R output/rds/phy.rds output/rds/phy.erm.rds | housekeeping
 	Rscript -e 'rmarkdown::render("$<", output_dir = "output/html", knit_root_dir = "$(CURDIR)")'
 	
 	

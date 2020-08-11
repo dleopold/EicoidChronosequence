@@ -12,71 +12,90 @@ mutate_by <- function(.data, group_vars, ...) {
     ungroup
 }
 
-# Get asympotic diversity and richness estimated from phyloseq object with iNEXT
-iNEXT.phy <- function(phy.in){
-  phy.in %>% otu_table %>% data.frame %>% t %>%
-    iNEXT(conf=0.95) %$% AsyEst %>% rename(SampID=Site) %>%
-    mutate(SampID=rep(sample_names(phy.in),each=3)) %>%
+# Get estimated diversity and richness estimates from phyloseq object with iNEXT
+iNEXT.phy <- function(phy.in,level, use.cores=parallel::detectCores()){
+  require(foreach)
+  require(doMC)
+  registerDoMC(cores=use.cores)
+  otuTab <- phy.in %>% otu_table %>% t %>% data.frame 
+  out <- foreach(i=1:ncol(otuTab), .combine=bind_rows) %dopar% {
+    estimateD(otuTab[,i],level=level) %>% 
+      tibble %>%
+      mutate(SampID=colnames(otuTab)[i])
+  }
+  out %>% 
+    filter(order!=2) %>%
+    transmute(SampID=SampID,
+              Metric=case_when(order==0 ~ 'Species richness',
+                               order==1 ~ 'Shannon diversity'),
+              Estimate=qD,
+              LCL=qD.LCL,
+              UCL=qD.UCL) %>%
     left_join(sample_data(phy.in) %>% data.frame %>%
                 rownames_to_column("SampID"))
 }
 
-#############################################################################
-### Wrapper functions for the betta() function form the breakaway package ###
-#############################################################################
+### Stats helper functions ###
 
-# Basic wrapper to run betta() and extract the results table
-betta_wrap <- function(x){
-  betta(chats=x$Estimator,
-        ses=x$s.e.,
-        X=model.matrix(~x$N*x$P)) %$% 
-    table %>% data.frame %>% 
-    rownames_to_column("Predictor") %>%
-    mutate(Predictor=gsub("x$","",Predictor,fixed = T),
-           Predictor=gsub("TRUE","",Predictor,fixed = T))
+# anova testing differences among sites
+aov_chrono <- function(x,y){
+  mod <- aov(Estimate~Site, data=x) %>% broom::tidy()
+  tibble(Metric=y$Metric,
+         Taxa=y$Taxa,
+         df=mod$df[1],
+         df.resid=mod$df[2],
+         Fval=mod$statistic[1],
+         Pval=mod$p.value[1])
 }
 
-# Perform a global test of a multi-lvel factor using a likelihood ratio test and AICc
-betta_LRT <- function(x){
-  m0 <- betta(chats=x$Estimator,ses=x$s.e.)
-  m1 <- betta(chats=x$Estimator,ses=x$s.e.,
-              X=model.matrix(~x$Site))
-  LR <- -2*(m0$loglikelihood-m1$loglikelihood)
-  df <- nrow(m1$table)-nrow(m0$table)
-  p <- pchisq(LR,df=df,lower.tail=FALSE)
-  deltaAICc <- m0$aicc - m1$aicc
-  data.frame(deltaAICc=deltaAICc,
-             LR=LR,
-             df=df,
-             pval=p)
+# Tukey HSD wrapper to order letters according to factor levels
+tukeyWrap <- function(x,y){
+  aovMod <- aov(Estimate~Site, data=x)
+  factorLevels <- aovMod$xlevels$Site
+  hsd <- TukeyHSD(aovMod)
+  Tukey.levels <- hsd[["Site"]][,4]
+  Tukey.labels <- data.frame(multcompView::multcompLetters(Tukey.levels)['Letters'],stringsAsFactors = F)
+  Tukey.labels %<>% rownames_to_column("Site")
+  Tukey.labels %<>% .[match(factorLevels,.$Site) ,]
+  Tukey.labels$Site %<>% factor(levels=factorLevels)
+  uniqLets <- Tukey.labels$Letters %>% as.character() %>% strsplit("") %>% unlist %>% unique
+  for(i in 1:nrow(Tukey.labels)){
+    foo <- Tukey.labels$Letters[i] %>% as.character() %>% strsplit("") %>% unlist
+    Tukey.labels$Letters[i] <- letters[which(uniqLets %in% foo)] %>% paste0(collapse="")
+  }
+  tibble(Tukey.labels) %>%
+    mutate(Taxa=y$Taxa,
+           Metric=y$Metric)
 }
 
-#' Test for pairwise differences in diversity accoutning for uncertainty in estimates
-betta_pairwise <- function(x){
-  # Pair-wise post-hoc test (https://github.com/adw96/breakaway/issues/84#issuecomment-613153006)
-  div.test <- betta(chats=x$Estimator,
-                    ses=x$s.e.,
-                    X=model.matrix(~x$Site-1))
-  A <- matrix(c(1, -1, 0, 0, 0, 1, 0, -1, 0, 0, 1, 0, 0, -1, 0, 1, 0, 0, 0, -1,
-                0, 1, -1, 0, 0, 0, 1, 0, -1, 0, 0, 1, 0, 0, -1, 0, 0, 1, -1, 0,
-                0, 0, 1, 0, -1, 0, 0, 0, 1, -1), ncol = 5, byrow = TRUE)
-  stats <- MASS::ginv(expm::sqrtm(A %*% div.test$cov %*% t(A))) %*% 
-    A %*% div.test$table[,'Estimates']
-  pvals <- 2*(1 - stats %>% abs %>% pnorm) %>% p.adjust("fdr")
-  names(pvals) <- apply(A,1,function(y){paste(levels(x$Site)[which(y==1)],
-                                              levels(x$Site)[which(y==-1)],sep="-")})
-  multcompView::multcompLetters(pvals) %$% Letters %>% 
-    data.frame(stringsAsFactors = F) %>% rownames_to_column("Site") %>% rename(Let='.')
+# anova of fertilizer effects
+aov_fert <- function(x,y){
+  mod <- aov(Estimate~N*P, data=x) %>% broom::tidy() 
+  tibble(Metric=y$Metric,
+         Taxa=y$Taxa,
+         Site=y$Site,
+         Predictor=mod$term,
+         df=mod$df,
+         sumsq=mod$sumsq,
+         meansq=mod$meansq,
+         Fval=mod$statistic,
+         Pval=mod$p.value)
 }
 
-# Extract predicted means and CIs for plotting
-betta_means <- function(x,X){
-  mod.mx <- model.matrix(as.formula(X),data=x)
-  betta(x$Estimator, x$s.e., X=mod.mx) %$% table %>%
-    data.frame %>%
-    rownames_to_column("Predictor") %>%
-    transmute(Predictor=Predictor,
-              mean=Estimates,
-              LCI=mean-(1.95*Standard.Errors),
-              UCI=mean+(1.95*Standard.Errors))
+# bootstrap CIs for plotting
+bootFun <- function(x,y,n=10000){
+  boots <- replicate(n, mean(sample(x$Estimate, replace=T)))
+  tibble(Metric=y$Metric,
+         Site=y$Site,
+         Taxa=y$Taxa,
+         Estimate=boots)
 }
+bootFun_fert <- function(x,y,n=10000){
+  boots <- replicate(n, mean(sample(x$Estimate, replace=T)))
+  tibble(Metric=y$Metric,
+         Site=y$Site,
+         Taxa=y$Taxa,
+         Predictor=y$Frt_treat,
+         Estimate=boots)
+}
+

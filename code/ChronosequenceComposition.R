@@ -25,30 +25,32 @@ source("code/Rfunctions.R")
 #' Colors for figure
 SiteColors <- viridis::viridis_pal(direction=-1,option="inferno")(10)[c(1,2,3,5,8)]
 
-#' Read in and subset data
+#' Read in, subset data, and make proportional
 phy.all <- readRDS("output/rds/phy.rds") %>% 
   subset_samples(LSAG) %>%
-  sweepOTUs 
+  sweepOTUs %>%
+  filter_taxa(function(x) {sum(x>0) > 2 }, T) %>%
+  transform_sample_counts(function(x){min(sample_sums(.))*x/sum(x)})
 phy.erm <- readRDS("output/rds/phy.erm.rds") %>% 
   subset_samples(LSAG) %>%
-  sweepOTUs
+  sweepOTUs %>%
+  filter_taxa(function(x) {sum(x>0) > 2 }, T) %>%
+  transform_sample_counts(function(x){min(sample_sums(.))*x/sum(x)})
 
-#' Community dissimilatiry (Jensen-Shannon distance)
-jsd.all <- phy.all %>% phyloseq::distance("jsd") %>% sqrt
-jsd.erm <- phy.erm %>% phyloseq::distance("jsd") %>% sqrt
-  
 #' # NMDS
 #' Fit nmds and output as a data.frame with sample data
-NMDS <- function(dist.in,phy.in,label){
-  invisible(capture.output(nmds <-metaMDS(dist.in,trymax=500)))
+NMDS <- function(phy.in,label){
+  dat <- phy.in %>% 
+    otu_table %>% data.frame
+  nmds <-metaMDS(dat,trymax=500)
   print(nmds)
   nmds  %>%
     scores("sites") %>% data.frame %>%
     mutate(Site=sample_data(phy.in)$Site,taxa=label)
 }
 #+ echo=T, results='hide'
-ord.all <- NMDS(jsd.all,phy.all,"All fungi")
-ord.erm <- NMDS(jsd.erm,phy.erm,"Putative ErM")
+ord.all <- NMDS(phy.all,"All fungi")
+ord.erm <- NMDS(phy.erm,"Putative ErM")
 
 #' # Ordisurf
 #' Fit non-linear surface representing site age to ordinations and output as a data.frame for plotting
@@ -80,7 +82,7 @@ surf.dat <- bind_rows(surf.all,surf.erm)
                                "2.0&times;10^4",
                                "1.5&times;10^5",
                                "4.1&times;10^6")) +
-    scale_colour_gradient(high = "grey40", low = "grey90",guide=F) +
+    scale_colour_gradient(high = "grey50", low = "grey90",guide=F) +
     geom_text(aes(label=let,x=-Inf,y=Inf),
               data=data.frame(taxa=c("All fungi","Putative ErM"),let=c("(a)","(b)")),
               family="serif",size=4,inherit.aes = F,fontface="bold", vjust=1.8, hjust=-0.45) +
@@ -88,26 +90,37 @@ surf.dat <- bind_rows(surf.all,surf.erm)
     labs(x="NMDS axis 1",y="NMDS axis 2") +
     ggthemes::theme_few() +
     theme(legend.text = element_markdown(),
-          legend.position = "bottom"))
-ggsave("output/figs/Fig.3.pdf", width=12, height=21, unit="cm") 
+          #legend.position = 'bottom',
+          strip.text = element_text(size=12),
+          axis.title = element_text(size=10),
+          axis.text = element_text(size=8)))
+ggsave("output/figs/ordinations.pdf", width=11.5, height=16, unit="cm") 
 
 #' # perMANOVA
+adonis_phy <- function(phy.in,x){
+  X <- phy.in %>% sample_data %>% data.frame %>% select(all_of=x) %>% .[,1]
+  Y <- phy.in %>% otu_table %>% data.frame %>% sqrt
+  adonis(Y~X, permutations=9999, parallel=parallel::detectCores())
+}
 #' All fungi
-adonis(jsd.all~Site,data=data.frame(sample_data(phy.all)))
-adonis(jsd.all~logAge,data=data.frame(sample_data(phy.all)))
+adonis_phy(phy.all,"Site")
+adonis_phy(phy.all,"logAge")
 #' Putative ErM
-adonis(jsd.erm~Site,data=data.frame(sample_data(phy.erm)))
-adonis(jsd.erm~logAge,data=data.frame(sample_data(phy.erm)))
+adonis_phy(phy.erm,"Site")
+adonis_phy(phy.erm,"logAge")
 
 #' # Betadispersion
+betadisper_phy <- function(phy.in){
+  X <- phy.in %>% sample_data %>% data.frame %$% Site
+  dist <- phy.in %>% otu_table %>% data.frame %>% sqrt %>% vegdist 
+  betadisper(dist,X)
+}
 #' All fungi
-beta.all <- betadisper(jsd.all,sample_data(phy.all)$Site)
+beta.all <- betadisper_phy(phy.all)
 boxplot(beta.all, main="Betadispersion all fungi")
 permutest(beta.all, pairwise = TRUE, permutations = 999)  
 #' Putative Erm
-beta.erm <- betadisper(jsd.erm,sample_data(phy.erm)$Site)
+beta.erm <- betadisper_phy(phy.erm)
 boxplot(beta.erm, main="Betadispersion putative ErM")
 permutest(beta.erm, pairwise = TRUE, permutations = 999)
-
-
 
